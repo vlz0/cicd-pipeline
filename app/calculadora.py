@@ -4,6 +4,7 @@ Modulo de operaciones aritméticas básicas. Una Calculadora.
 Contiene funciones para sumar, restar, multiplicar y dividir numeros.
 """
 
+
 def sumar(a, b):
     """
     Calcula la suma de dos numeros.
