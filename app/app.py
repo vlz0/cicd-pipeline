@@ -42,6 +42,12 @@ def index():
 
     return render_template("index.html", resultado=resultado)
 
+@app.route("/health")
+def health():
+    """
+    Endpoint para verificar que la aplicación esté viva y respondiendo
+    """
+    return "OK", 200
 
 if __name__ == "__main__":  # pragma: no cover
     app.run(debug=False, port=5000, host="0.0.0.0")
