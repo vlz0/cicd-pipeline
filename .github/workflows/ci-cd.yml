@@ -11,6 +11,14 @@ on:
       - main # Se ejecuta en pull requests hacia main
   workflow_dispatch: # Permite ejecución manual desde la UI de GitHub Actions
 
+env:
+  # Staging
+  STAGING_CLUSTER_NAME: calculadora-staging-cluster
+  STAGING_SERVICE_NAME: calculadora-staging-service
+  # Production
+  PROD_CLUSTER_NAME: calculadora-production-cluster
+  PROD_SERVICE_NAME: calculadora-production-service
+
 # Definición de los trabajos (Jobs)
 jobs:
   # -------------------------------------
@@ -152,10 +160,6 @@ jobs:
       repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
       image-tag: ${{ needs.build-test-publish.outputs.image_tag }}
     secrets: inherit
-    outputs:
-      alb_url_staging: ${{ needs.deploy-cfn-staging.outputs.alb_url }}
-      cluster_name_staging: "calculadora-staging-cluster"
-      service_name_staging: "calculadora-staging-service"
 
   # -------------------------------------
   # Job de Actualización Servicio Staging (ECS - Forzar despliegue)
@@ -180,13 +184,13 @@ jobs:
       - name: Force New Deployment ECS Service Staging
         run: |
           echo "Forcing new deployment for Staging service..."
-          aws ecs update-service --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} \
-                                --service ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} \
+          aws ecs update-service --cluster ${{ env.STAGING_CLUSTER_NAME }} \
+                                --service ${{ env.STAGING_SERVICE_NAME }} \
                                 --force-new-deployment \
                                 --region us-east-1
           # Esperar a que el despliegue se estabilice
           echo "Waiting for Staging service deployment to stabilize..."
-          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-staging.outputs.cluster_name_staging }} --services ${{ needs.deploy-cfn-staging.outputs.service_name_staging }} --region us-east-1
+          aws ecs wait services-stable --cluster ${{ env.STAGING_CLUSTER_NAME }} --services ${{ env.STAGING_SERVICE_NAME }} --region us-east-1
           echo "Staging service deployment stable."
 
   # -------------------------------------
@@ -235,10 +239,6 @@ jobs:
       repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
       image-tag: ${{ needs.build-test-publish.outputs.image_tag }}
     secrets: inherit
-    outputs:
-      alb_url_prod: ${{ needs.deploy-cfn-prod.outputs.alb_url }} # <-- Ojo a la sintaxis
-      cluster_name_prod: "calculadora-production-cluster"
-      service_name_prod: "calculadora-production-service"
 
   # -------------------------------------
   # Job de Actualización Servicio Producción (ECS - Forzar despliegue)
@@ -262,13 +262,13 @@ jobs:
       - name: Force New Deployment ECS Service Production
         run: |
           echo "Forcing new deployment for Production service..."
-          aws ecs update-service --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} \
-                                --service ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} \
+          aws ecs update-service --cluster ${{ env.PROD_CLUSTER_NAME }} \
+                                --service ${{ env.PROD_SERVICE_NAME }} \
                                 --force-new-deployment \
                                 --region us-east-1
           # Esperar a que el despliegue se estabilice
           echo "Waiting for Production service deployment to stabilize..."
-          aws ecs wait services-stable --cluster ${{ needs.deploy-cfn-prod.outputs.cluster_name_prod }} --services ${{ needs.deploy-cfn-prod.outputs.service_name_prod }} --region us-east-1
+          aws ecs wait services-stable --cluster ${{ env.PROD_CLUSTER_NAME }} --services ${{ env.PROD_SERVICE_NAME }} --region us-east-1
           echo "Production service deployment stable."
 
   # -------------------------------------
