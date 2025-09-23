@@ -41,17 +41,26 @@ jobs:
         with:
           python-version: '3.12' # Especificar versión de Python
 
-      # 3. Instalar dependencias de Python
+      # 3. Cache de dependencias
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip  # La carpeta donde pip guarda la caché en Linux
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 4. Instalar dependencias de Python
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt # Instalar paquetes listados en requirements.txt
 
-      # 4. Ejecutar Black (Formateador de código) en modo chequeo
+      # 5. Ejecutar Black (Formateador de código) en modo chequeo
       - name: Run Black (Formatter)
         run: black app --check
 
-      # 5. Ejecutar Pylint (Linter) y guardar reporte
+      # 6. Ejecutar Pylint (Linter) y guardar reporte
       - name: Run Pylint (Linter)
         run: pylint app --output-format=text --fail-under=9 > pylint-report.txt || true # Continúa aunque falle Pylint (para Sonar)
 
@@ -77,7 +86,7 @@ jobs:
             htmlcov/
             report.html
 
-      # 9. Ejecutar análisis con SonarCloud
+      # 8. Ejecutar análisis con SonarCloud
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5.0.0
         env:
@@ -212,13 +221,23 @@ jobs:
         with:
           python-version: '3.12'
 
-      # 3. Instalar dependencias de prueba
+      # 3. Cache de dependencias
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip  # La carpeta donde pip guarda la caché en Linux
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+
+      # 4. Instalar dependencias de prueba
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt # Incluye selenium, pytest
 
-      # 4. Ejecutar pruebas de aceptación contra el entorno de Staging
+      # 5. Ejecutar pruebas de aceptación contra el entorno de Staging
       - name: Run Acceptance Tests against Staging
         env:
           APP_BASE_URL: ${{ needs.deploy-cfn-staging.outputs.alb_url }} # URL del ALB de Staging desde salidas
@@ -290,13 +309,22 @@ jobs:
         with:
           python-version: '3.12'
 
-      # 3. Instalar dependencias de prueba
+      # 3. Cache de dependencias
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip  # La carpeta donde pip guarda la caché en Linux
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      # 4. Instalar dependencias de prueba
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Ejecutar pruebas de humo contra el entorno de Producción
+      # 5. Ejecutar pruebas de humo contra el entorno de Producción
       - name: Run Smoke Tests against Production
         env:
           APP_BASE_URL: ${{ needs.deploy-cfn-prod.outputs.alb_url }} # URL del ALB de Producción desde salidas
