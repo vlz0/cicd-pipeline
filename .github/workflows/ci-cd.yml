@@ -121,7 +121,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          push: false   # <-- IMPORTANTE: No subir la imagen todavía
+          push: false   # No subir la imagen todavía
           load: true    # Cargar la imagen en el runner para que Trivy pueda escanearla
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
@@ -141,7 +141,7 @@ jobs:
           ignore-unfixed: true # Ignorar vulnerabilidades que aún no tienen un parche
           trivy-version: '0.66.0'
 
-      # 14. Subir la imagen a Docker Hub (si el escaneo fue exitoso)
+      # 14. Subir la imagen latest a Docker Hub
       - name: Push Docker image to Docker Hub
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -332,3 +332,72 @@ jobs:
           echo "Running smoke tests against: $APP_BASE_URL"
           sleep 30 # Espera prudencial
           pytest tests/test_smoke_app.py # Ejecutar las pruebas de humo
+
+# -------------------------------------
+  # Job de Rollback si fallan las pruebas de humo
+  # -------------------------------------
+  rollback-on-failure:
+    needs: [smoke-test-prod, build-test-publish]
+    runs-on: ubuntu-latest
+    if: always() && needs.smoke-test-prod.result == 'failure'
+
+    steps:
+      # --- Rollback de Producción ---
+      - name: Trigger Rollback on Production Environment
+        uses: ./.github/workflows/deploy.yml
+        with:
+          stack-name: calculadora-prod-stack
+          environment-name: production
+          repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
+          image-tag: 'stable'
+        secrets: inherit
+
+      - name: Force Update on Production Service
+        run: aws ecs update-service --cluster ${{ env.PROD_CLUSTER_NAME }} --service ${{ env.PROD_SERVICE_NAME }} --force-new-deployment --region us-east-1
+
+      - name: Notify failure and rollback
+        run: echo "::error::Smoke tests failed! Rollback to 'stable' tag has been triggered."
+
+      # --- Rollback de Staging ---
+      - name: Trigger Rollback on Staging Environment
+        uses: ./.github/workflows/deploy.yml
+        with:
+          stack-name: calculadora-staging-stack
+          environment-name: staging
+          repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
+          image-tag: 'stable'
+        secrets: inherit
+
+      - name: Force Update on Staging Service
+        run: aws ecs update-service --cluster ${{ env.STAGING_CLUSTER_NAME }} --service ${{ env.STAGING_SERVICE_NAME }} --force-new-deployment --region us-east-1
+
+# -------------------------------------
+# Job para guardar la versión estable si todo fue exitoso
+# -------------------------------------
+save-stable-version:
+  needs: [smoke-test-prod, build-test-publish]
+  runs-on: ubuntu-latest
+  if: success()
+
+  steps:
+    # 1. Iniciar sesión en Docker Hub para poder subir la nueva etiqueta
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # 2. Re-etiquetar la imagen exitosa como 'stable' y subirla
+    - name: Tag and Push Stable Image
+      run: |
+        IMAGE_TAG="${{ needs.build-test-publish.outputs.image_tag }}"
+        REPO_NAME="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}"
+        
+        echo "Pulling newly validated image: $REPO_NAME:$IMAGE_TAG"
+        docker pull "$REPO_NAME:$IMAGE_TAG"
+        
+        echo "Tagging image as stable"
+        docker tag "$REPO_NAME:$IMAGE_TAG" "$REPO_NAME:stable"
+        
+        echo "Pushing stable tag to Docker Hub"
+        docker push "$REPO_NAME:stable"
