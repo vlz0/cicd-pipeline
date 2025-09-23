@@ -221,7 +221,7 @@ jobs:
       # 4. Ejecutar pruebas de aceptación contra el entorno de Staging
       - name: Run Acceptance Tests against Staging
         env:
-          APP_BASE_URL: ${{ needs.deploy-cfn-staging.outputs.alb_url_staging }} # URL del ALB de Staging desde salidas
+          APP_BASE_URL: ${{ needs.deploy-cfn-staging.outputs.alb_url }} # URL del ALB de Staging desde salidas
         run: |
           echo "Running acceptance tests against: $APP_BASE_URL"
           sleep 30 # Espera prudencial para el registro del target en el ALB
@@ -299,7 +299,7 @@ jobs:
       # 4. Ejecutar pruebas de humo contra el entorno de Producción
       - name: Run Smoke Tests against Production
         env:
-          APP_BASE_URL: ${{ needs.deploy-cfn-prod.outputs.alb_url_prod }} # URL del ALB de Producción desde salidas
+          APP_BASE_URL: ${{ needs.deploy-cfn-prod.outputs.alb_url }} # URL del ALB de Producción desde salidas
         run: |
           echo "Running smoke tests against: $APP_BASE_URL"
           sleep 30 # Espera prudencial
