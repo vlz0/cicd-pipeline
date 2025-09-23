@@ -139,6 +139,7 @@ jobs:
           exit-code: '1' # El pipeline fallará si se encuentran vulnerabilidades
           severity: 'CRITICAL,HIGH' # Escanear solo por severidades críticas y altas
           ignore-unfixed: true # Ignorar vulnerabilidades que aún no tienen un parche
+          version: '0.66.0'
 
       # 14. Subir la imagen latest a Docker Hub
       - name: Push Docker image to Docker Hub
