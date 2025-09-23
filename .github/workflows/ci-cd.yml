@@ -334,7 +334,7 @@ jobs:
           pytest tests/test_smoke_app.py # Ejecutar las pruebas de humo
 
   # -------------------------------------
-  # Job de Rollback si fallan las pruebas de humo
+  # Job de Rollback si fallan las pruebas de humo (VERSIÓN CORREGIDA)
   # -------------------------------------
   rollback-on-failure:
     needs: [smoke-test-prod, build-test-publish]
@@ -342,37 +342,56 @@ jobs:
     if: always() && needs.smoke-test-prod.result == 'failure'
 
     steps:
-      - name: Notify failure and rollback
-        run: echo "::error::Smoke tests failed! Rollback to 'stable' tag has been triggered."
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      # --- Rollback de Producción ---
-      - name: Trigger Rollback on Production Environment
-        uses: ./.github/workflows/deploy.yml
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          stack-name: calculadora-prod-stack
-          environment-name: production
-          repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
-          image-tag: 'stable'
-        secrets: inherit
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
 
-      - name: Force Update on Production Service
-        run: aws ecs update-service --cluster ${{ env.PROD_CLUSTER_NAME }} --service ${{ env.PROD_SERVICE_NAME }} --force-new-deployment --region us-east-1
+      - name: Rollback Staging and Production
+        run: |
+          STABLE_IMAGE_URI="${{ secrets.DOCKERHUB_USERNAME }}/${{ needs.build-test-publish.outputs.repo_name }}:stable"
+          echo "::warning:: Starting rollback to stable image: $STABLE_IMAGE_URI"
 
-      # --- Rollback de Staging ---
-      - name: Trigger Rollback on Staging Environment
-        uses: ./.github/workflows/deploy.yml
-        with:
-          stack-name: calculadora-staging-stack
-          environment-name: staging
-          repo-name: ${{ needs.build-test-publish.outputs.repo_name }}
-          image-tag: 'stable'
-        secrets: inherit
+          # --- Rollback de Producción ---
+          echo "Rolling back Production environment..."
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name calculadora-prod-stack \
+            --parameter-overrides \
+              EnvironmentName=production \
+              DockerImageUri=$STABLE_IMAGE_URI \
+              LabRoleArn=${{ secrets.LAB_ROLE_ARN }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              SubnetIds="${{ secrets.SUBNET_IDS }}" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changes
+          aws ecs update-service --cluster ${{ env.PROD_CLUSTER_NAME }} --service ${{ env.PROD_SERVICE_NAME }} --force-new-deployment
 
-      - name: Force Update on Staging Service
-        run: aws ecs update-service --cluster ${{ env.STAGING_CLUSTER_NAME }} --service ${{ env.STAGING_SERVICE_NAME }} --force-new-deployment --region us-east-1
+          # --- Rollback de Staging ---
+          echo "Rolling back Staging environment..."
+          aws cloudformation deploy \
+            --template-file template.yaml \
+            --stack-name calculadora-staging-stack \
+            --parameter-overrides \
+              EnvironmentName=staging \
+              DockerImageUri=$STABLE_IMAGE_URI \
+              LabRoleArn=${{ secrets.LAB_ROLE_ARN }} \
+              VpcId=${{ secrets.VPC_ID }} \
+              SubnetIds="${{ secrets.SUBNET_IDS }}" \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changes
+          aws ecs update-service --cluster ${{ env.STAGING_CLUSTER_NAME }} --service ${{ env.STAGING_SERVICE_NAME }} --force-new-deployment
+          
+          echo "::error::Smoke tests failed! Rollback to 'stable' tag has been completed."
 
   # -------------------------------------
-  # Job para guardar la versión estable si todo fue exitoso
+  # Job para etiquetar la versión estable si todo fue exitoso
   # -------------------------------------
   save-stable-version:
     needs: [smoke-test-prod, build-test-publish]
@@ -380,14 +399,12 @@ jobs:
     if: success()
 
     steps:
-      # 1. Iniciar sesión en Docker Hub para poder subir la nueva etiqueta
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 2. Re-etiquetar la imagen exitosa como 'stable' y subirla
       - name: Tag and Push Stable Image
         run: |
           IMAGE_TAG="${{ needs.build-test-publish.outputs.image_tag }}"
