@@ -96,22 +96,41 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 12. Construir y pushear imagen Docker a Docker Hub
-      - name: Build and push Docker image
-        id: docker_build_push # Darle ID para referenciar output
+      # 12. Construir la imagen Docker localmente
+      - name: Build Docker image
+        id: build_image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          push: false   # <-- IMPORTANTE: No subir la imagen todavía
+          load: true    # Cargar la imagen en el runner para que Trivy pueda escanearla
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # 13. Establecer las salidas del job usadas para el despliegue
+      # 13. Escanear la imagen con Trivy para vulnerabilidades
+      - name: Scan Docker image with Trivy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1' # El pipeline fallará si se encuentran vulnerabilidades
+          severity: 'CRITICAL,HIGH' # Escanear solo por severidades críticas y altas
+          ignore-unfixed: true # Ignorar vulnerabilidades que aún no tienen un parche
+
+      # 14. Subir la imagen a Docker Hub (si el escaneo fue exitoso)
+      - name: Push Docker image to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}:latest
+
+      # 15. Establecer las salidas del job usadas para el despliegue
       - name: Set Job Outputs
         id: set_outputs
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
